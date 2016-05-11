@@ -15,7 +15,7 @@ park_green = (115, 178, 115)
 green = 	(115, 220, 115)
 lightgreen = (150,212,166)
 water_grey = (130, 130, 130)
-purple = (250, 0, 250) 
+purple = (250, 0, 250)
 
 
 def basemap_options(**kwargs):
@@ -51,7 +51,7 @@ def basemap_options(**kwargs):
             # 'featureDict': None,
             # 'cols': ["OBJECTID", "SHAPE@"]
 		# },
-		
+
 		{
             'feature': 'PhiladelphiaParks',
             'fill': park_green,
@@ -79,21 +79,21 @@ def basemap_options(**kwargs):
 	}
 	feats = []
 	for key, value in kwargs.iteritems():
-		basemap_options.update({key:value}) 
-	
-	return basemap_options	
+		basemap_options.update({key:value})
+
+	return basemap_options
 def conduit_options(type, **kwargs):
 	#drawing options for conduits
 	conduit_def_symbologies = {
 		'stress': {
 			'title': 'Condiut Stress',
 			'description': 'Shows how taxed conduits are based on their flow (peak flow) with respect to their full-flow capacity',
-			'threshold': 1,#fraction used 
+			'threshold': 1,#fraction used
 			'type': 'stress',
 			'fill':greyRedGradient,
 			'draw_size':line_size,
 			'exp':0.8,
-			'xplier':10	
+			'xplier':10
 		},
 		'compare_flow': {
 			'title': 'Flow Comparison',
@@ -143,11 +143,11 @@ def conduit_options(type, **kwargs):
 			'type': 'trace'
 		}
 	}
-	
+
 	selected_ops = conduit_def_symbologies[type]
 	for key, value in kwargs.iteritems():
-		selected_ops.update({key:value}) 
-	
+		selected_ops.update({key:value})
+
 	return selected_ops
 def node_options(type='flood', **kwargs):
 
@@ -168,11 +168,11 @@ def node_options(type='flood', **kwargs):
 			'type': 'flood_color'
 		}
 	}
-	
+
 	selected_ops = node_symbologies[type]
 	for key, value in kwargs.iteritems():
-		selected_ops.update({key:value}) 
-	
+		selected_ops.update({key:value})
+
 	return selected_ops
 def parcel_options(type='flood', **kwargs):
 
@@ -201,22 +201,23 @@ def parcel_options(type='flood', **kwargs):
 				'gdb':r'C:\Data\ArcGIS\GDBs\LocalData.gdb'
 				}
 			}
-		
+
 	selected_ops = parcel_symbologies[type]
 	for key, value in kwargs.iteritems():
-		selected_ops.update({key:value}) 
-	
+		selected_ops.update({key:value})
+
 	return selected_ops
 def default_draw_options():
-	
+
 	default_options = {
 		'width': 2048,
 		'bbox':None,
 		'imgName':None,
+		'svg':True,
 		'nodeSymb': node_options('flood'),
 		'conduitSymb': conduit_options('stress'),
-		'basemap': basemap_options(),
 		'parcelSymb': parcel_options('flood'),
+		'basemap': basemap_options(),
 		'bg': white,
 		'xplier': 1,
 		'traceUpNodes': [],
@@ -225,114 +226,161 @@ def default_draw_options():
 		'title': None
 	}
 	return default_options
-	
+
 
 #DRAWING UTILITY FUNCTIONS
 def greenRedGradient(x, xmin, xmax):
-	
+
 	range = xmax - xmin
 	scale = 255 / range
-	
+
 	x = min(x, xmax) #limit any vals to the prescribed max
-	
+
 	#print "range = " + str(range)
 	#print "scale = " + str(scale)
 	r = int(round(x*scale))
 	g = int(round(255 - x*scale))
 	b = 0
-	
+
 	return (r, g, b)
 def greyRedGradient(x, xmin, xmax):
-	
+
 	range = xmax - xmin
-	
+
 	rMin = 100
 	bgMax = 100
 	rScale = (255 - rMin) / range
 	bgScale = (bgMax) / range
 	x = min(x, xmax) #limit any vals to the prescribed max
-	
-	
+
+
 	#print "range = " + str(range)
 	#print "scale = " + str(scale)
 	r = int(round(x*rScale + rMin ))
 	g = int(round(bgMax - x*bgScale))
 	b = int(round(bgMax - x*bgScale))
-	
+
 	return (r, g, b)
 def greyGreenGradient(x, xmin, xmax):
-	
+
 	range = xmax - xmin
-	
+
 	gMin = 100
 	rbMax = 100
 	gScale = (255 - gMin) / range
 	rbScale = (rbMax) / range
 	x = min(x, xmax) #limit any vals to the prescribed max
-	
-	
+
+
 	#print "range = " + str(range)
 	#print "scale = " + str(scale)
 	r = int(round(rbMax - x*rbScale))
 	g = int(round(x*rbScale + gMin ))
 	b = int(round(rbMax - x*rbScale))
-	
+
 	return (r, g, b)
 
 def col2RedGradient(x, xmin, xmax, startCol=lightgrey):
-	
+
 	range = xmax - xmin
-	
+
 	rMin = startCol[0]
 	gMax = startCol[1]
 	bMax = startCol[2]
-	
+
 	rScale = (255 - rMin) / range
 	gScale = (gMax) / range
 	bScale = (bMax) / range
 	x = min(x, xmax) #limit any vals to the prescribed max
-	
-	
+
+
 	#print "range = " + str(range)
 	#print "scale = " + str(scale)
 	r = int(round(x*rScale + rMin ))
 	g = int(round(gMax - x*gScale))
 	b = int(round(bMax - x*bScale))
-	
+
 	return (r, g, b)
 
 	#lightgrey = (235, 235, 225)
 
 def blueRedGradient(x, xmin, xmax):
-	
+
 	range = xmax - xmin
 	scale = 255 / range
-	
+
 	x = min(x, xmax) #limit any vals to the prescribed max
-	
+
 	#print "range = " + str(range)
 	#print "scale = " + str(scale)
 	r = int(round(x*scale))
 	g = 0
 	b = int(round(255 - x*scale))
-	
+
 	return (r, g, b)
 def line_size(q, exp=1):
 	return int(round(math.pow(q, exp)))
-	
+
 #geometry related functions
+def annotateLine (draw, dataDict, fontScale=1, annoKey='name', labeled = None, svg=True):
+
+	txt = dataDict[annoKey]
+
+	if not txt in labeled:
+		#do not repeat labels
+		#font = ImageFont.truetype(fontFile, int(25 * fontScale))
+		#imgTxt = Image.new('L', font.getsize(txt))
+		#drawTxt = ImageDraw.Draw(imgTxt)
+		#drawTxt.text((0,0), txt, font=font, fill=(10,10,12))
+
+		coords = dataDict['coordinates']
+		drawCoord = dataDict['draw_coordinates']
+		angle = angleBetweenPoint(coords[0], coords[1])
+		midpoint = midPoint(drawCoord[0], drawCoord[1])
+		#angletxt = rotate()
+		text = draw.text(txt, (midpoint[0], midpoint[1]), text_anchor='middle', fill='rgb(185, 180, 180)' opacity=0.5,  font_size=14)
+		draw.add(text)
+		#texRot = imgTxt.rotate(angle, expand=1)
+		#canvas.paste( ImageOps.colorize(texRot, (0,0,0), (255,255,84)), (242,60),  texRot)
+
+
+		#img.paste(texRot , midpoint,  texRot)
+		#img.paste(ImageOps.colorize(texRot, (0,0,0), (10,10,12)), midpoint,  texRot)
+		labeled.append(txt) #keep track of whats been labeled
+
+def midPoint(xy1, xy2):
+
+	dx, dy = (xy2[0] + xy1[0]), (xy2[1] + xy1[1])
+	midpt = ( int(dx/2), int(dy/2.0) )
+
+	#angle in radians
+	return midpt
+def angleBetweenPoint(xy1, xy2):
+	dx, dy = (xy2[0] - xy1[0]), (xy2[1] - xy1[1])
+
+	if dy !=0:
+		angle = (math.atan(float(dx)/float(dy)) * 180/math.pi )
+		if angle < 0:
+			angle = 270 - angle
+		else:
+			angle = 90 - angle
+	else:
+		angle=0
+	#angle in radians
+	return angle
+
 def circleBBox(coordinates, radius):
 	#returns the bounding box of a circle given as centriod coordinate and radius
 	x = coordinates[0] #this indexing is because other elements haev more than on coordinate (ulgy pls fix)
 	y = coordinates[1]
 	r = radius
-	
+
 	return (x-r, y-r, x+r, y+r)
 
 def getX2(y1, y2, length, x1=0):
-	
+
 	#return the x2 coordinate given y1, y2, the line segment length, and x0
-	
+
 	a = y2 - y1
 	c = length
 	return math.sqrt(c*c - a*a) + x1
