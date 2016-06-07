@@ -1,4 +1,5 @@
-#sys.path.append(r"P:\Tools\swmmio")
+#!/usr/bin/env python
+#coding:utf-8
 #sys.path.append(r"P:\Tools")
 
 import random
@@ -6,8 +7,8 @@ from time import gmtime, strftime
 import re
 import os
 import numpy
-from PIL import Image, ImageDraw, ImageFont
-from images2gif import writeGif
+import pandas as pd
+import parcels
 import pickle
 import swmm_utils as su
 import swmm_headers
@@ -49,10 +50,19 @@ class Model(object):
 		self.inp = inp(inpFile)
 		self.rpt = rpt(rptFile)
 
+		#slots to hold processed data
+		self.organized_node_data = None
+		self.organized_conduit_data = None
+		self.bbox = None #to remember how the model data was clipped
+
 	def organizeConduitData (self, bbox=None, subset=None, extraData=None, findOrder=False):
 
 		#creates a dictionary of dictionaries containing relevant data
 		#for conduits within a SWMM model. Upstream and downstream node data is attributed to the
+
+		#check if this has been done already and return that data accordingly
+		if self.organized_conduit_data and bbox==self.bbox:
+			return self.organized_conduit_data
 
 		#parse out the main objects of this model
 		inp = self.inp
@@ -92,6 +102,8 @@ class Model(object):
 			#try:
 			upstreamNodeID = conduit_data[0]
 			downstreamNodeID = conduit_data[1]
+			inletoffset = float(conduit_data[4])
+			outletoffset = float(conduit_data[5])
 			length = float(conduit_data[2])
 			upstreamXY = coordsDict[upstreamNodeID]
 			upstreamXY = [float(i) for i in upstreamXY] #convert to floats
@@ -104,8 +116,10 @@ class Model(object):
 				continue
 
 			#downstream pipe id: the pipe whose upstream id equals downstreamNodeID
-			conduit = Link(conduit_id, [upstreamXY, downstreamXY], geom1)
-
+			conduit = Link(conduit_id, [upstreamXY, downstreamXY], geom1, inletoffset, outletoffset)
+			conduit.length = length
+			conduit.upNodeID = upstreamNodeID
+			conduit.downNodeID = downstreamNodeID
 
 			if rpt and (upstreamNodeID in nodesDepthSummaryDict) and (downstreamNodeID in nodesDepthSummaryDict):
 				# #if the up and downstream nodes are also found in the node depth summary dictionary,
@@ -145,12 +159,21 @@ class Model(object):
 			# 'reachLength':reachLength
 			}
 
+		#remember this stuff for later
+		self.organized_conduit_data = output
+		self.bbox = bbox
+
 		return output
 
 	def organizeNodeData (self, bbox=None, subset=None):
 
 		#creates a dictionary of dictionaries containing relevant data
 		#per node within a SWMM model.
+
+		#check if this has been done already and return that data accordingly
+		if self.organized_node_data and bbox==self.bbox:
+			print "loaded node objs from " + self.rpt.fName
+			return self.organized_node_data
 
 		#parse out the main objects of this model
 		inp = self.inp
@@ -192,13 +215,18 @@ class Model(object):
 
 			n = Node(node, invert, xy)
 
+			try:
+			    n.maxDepth = float(allNodesDict[node][1])
+			except ValueError:
+			    pass #not a float, probably a 'FIXED' tag at that index on a outfall node
+
 			if (node in nodesDepthSummaryDict):
 				#if the up and downstream nodes are also found in the node depth summary dictionary,
 				#grab the relevant data and store a little dictionary
 				NDA = nodesDepthSummaryDict[node] #upstream node depth array
 
 				n.maxHGL = float(NDA[3])
-				n.maxDepth = float(NDA[2])
+				#n.maxDepth = float(NDA[2])
 				maxEl = max(n.maxHGL, maxEl) #increase the max elevation observed with the HGL
 
 			if (node in nodesFloodSummaryDict):
@@ -224,46 +252,64 @@ class Model(object):
 			'minEl':minEl,
 			}
 
+		#save for later use. save the bbox instance so we refresh this attributed
+		#whenever the bbox is changed (so we don't leave elements out)
+		self.organized_node_data = output
+		self.bbox = bbox
+
 		return output
 
-	def exportData(self, fname=None, type='node', bbox=None, openfile=True):
+	def node(self, node, conduit=None):
 
-		#this is broken since using objects for nodes/links
+		#method for provide information about specific model elements
+		#returns a node object given its ID
+		if not self.organized_node_data:
+			self.organized_node_data = self.organizeNodeData()
+
+		n = self.organized_node_data['node_objects'][node]
+		subcats_inp = self.inp.createDictionary("[SUBCATCHMENTS]")
+		subcats_rpt = self.rpt.createDictionary('Subcatchment Runoff Summary')
+
+		n.nodes_upstream = su.traceFromNode(self, node, mode='up')['nodes']
+		n.subcats_direct = [k for k,v in subcats_inp.items() if v[1]==node]
+		n.subcats_upstream = [k for k,v in subcats_inp.items() if v[1] in n.nodes_upstream]
+
+
+		n.drainage_area_direct = sum([float(x) for x in [v[2] for k,v in subcats_inp.items() if k in n.subcats_direct]])
+		n.drainage_area_upstream = sum([float(x) for x in [v[2] for k,v in subcats_inp.items() if k in n.subcats_upstream]])
+
+		n.runoff_upstream_mg = sum([float(x) for x in [v[5] for k,v
+								in subcats_rpt.items() if k in n.subcats_upstream]])
+		n.runoff_upstream_cf = n.runoff_upstream_mg*1000000/7.48
+		return n
+
+
+	#def exportData(self, fname=None, type='node', bbox=None, openfile=True):
+	def export_elements(self,  element_type='node', filename=None, bbox=None, openfile=True):
 		#exports the organized SWMM data into a csv table
 
-		#organize the data
-		if type == 'node':
+		#organize the data -> dictionary of objects
+		if element_type == 'node':
 			data = self.organizeNodeData(bbox)
-			dicts = data['nodeDictionaries']
-		elif type == 'conduit':
+			dicts = data['node_objects']
+		elif element_type == 'conduit':
 			data = self.organizeConduitData(bbox)
-			dicts = data['conduitDictionaries']
-		elif type =='parcels':
-			data = su.parcel_flood_duration(self, 'PWD_PARCELS_SHEDS', threshold=0)
+			dicts = data['conduit_objects']
+		elif element_type =='parcel':
+			data = parcels.parcel_flood_duration(self, 'PWD_PARCELS_SHEDS', threshold=0)
 			dicts =data['parcels']
 		else:
 			return "incorrect data type specified"
 
-		#make first header column hold the node ID
-		#have to hack the dictionary a bit:
-		keys = dicts[dicts.keys()[0]].keys() #accesses the keys of the first node ID
-		keys.reverse()
-		keys.append('id')
-		keys.reverse() #reverse to append the id key to the front of the keys list
+		#grab first object in list to structure the dataframe
+		ref_object = dicts[dicts.keys()[0]]
+		data = [[getattr(v,j) for j in ref_object.__slots__] for k,v in dicts.items()]
+		df = pd.DataFrame(data, columns = ref_object.__slots__)
 
-		if not fname: fname = self.inp.name + "_" + type + 's_' + su.randAlphaNum(5)
-		csvfilepath = os.path.join(self.inp.dir, fname) + '.csv'
-		with open(csvfilepath, 'wb') as file:
-			fieldnames = keys
-			writer = csv.DictWriter(file, fieldnames=fieldnames)
-			writer.writeheader()
-
-			for id, data in dicts.iteritems():
-
-				therowdict = {'id':id}
-				therowdict.update(data)
-
-				writer.writerow(therowdict)
+		#save to file csv
+		if not filename: filename = self.inp.name + "_" + element_type + 's_'
+		csvfilepath = os.path.join(self.inp.dir, filename) + '.csv'
+		df.to_csv(csvfilepath)
 
 		if openfile:
 			os.startfile(csvfilepath)
@@ -318,7 +364,7 @@ class SWMMIOFile(object):
 		outFile = open(outFilePath, 'w')
 		headerList = self.headerList #inpSectionHeaders.headerList #replace sloppy rpt file headers with these one-row headers (CSV ready)
 		cleaned = None
-
+		#return headerList
 		with open(self.filePath) as rptSection:
 
 			rptSection.seek(byteRange[0]) #jump to the start location
@@ -326,7 +372,7 @@ class SWMMIOFile(object):
 			byteRemovedFromHeaderCleaning = 0
 			#clean up the headers
 			for hPair in headerList:
-				#maybe slow because we're scanning the file multiple times for each header pair
+				#scanning the file multiple times for each header pair
 				raw = raw.replace(hPair[0], hPair[1])
 				byteRemovedFromHeaderCleaning += len(hPair[0][0]) - len(hPair[0][1])
 
@@ -360,6 +406,11 @@ class SWMMIOFile(object):
 		return outFilePath
 
 	def createDictionary (self, sectionTitle = defaultSection):
+
+		"""
+		Help info about this method.
+		"""
+
 		preppedTempFilePath = self.readSectionAndCleanHeaders(sectionTitle) #pull relevant section and clean headers
 
 		if not preppedTempFilePath:
@@ -390,6 +441,11 @@ class SWMMIOFile(object):
 
 		return the_dict
 
+
+	def create_dataframe (self, section=defaultSection):
+		preppedTempFilePath = self.readSectionAndCleanHeaders(sectionTitle)
+
+
 	def printSectionOfFile(self, lookUpStr=None, startByte=0, printLength = 500):
 
 		l = startByte #line byte location
@@ -400,13 +456,13 @@ class SWMMIOFile(object):
 
 			if lookUpStr:
 				for line in f:
-					l += len(line) + len("\n")
+					#l += len(line) + len("\n")
 					if lookUpStr in line:
 						f.seek(l)
+						break
+					l += len(line) + len("\n")
 
-			return f.read(printLength)
-
-
+			print f.read(printLength)
 
 class rpt(SWMMIOFile):
 
@@ -520,12 +576,15 @@ class inp(SWMMIOFile):
 		#assign the header list
 		self.headerList = swmm_headers.inpHeaderList
 
-
 class Node(object):
 
 	#object representing a swmm node object
 
-	__slots__ = ('id', 'invert', 'coordinates', 'flood_duration', 'maxDepth',
+
+	__slots__ = ('id', 'invert', 'coordinates', 'nodes_upstream', 'subcats_direct', 'subcats_upstream',
+				'drainage_area_direct', 'drainage_area_upstream',
+				'runoff_upstream_cf', 'runoff_upstream_mg',
+				'flood_duration', 'maxDepth',
 				'maxHGL', 'draw_coordinates', 'lifecycle', 'delta_type', 'is_delta')
 
 	def __init__(self, id, invert=None, coordinates=[]):
@@ -534,6 +593,13 @@ class Node(object):
 		self.id = id
 		self.invert = invert
 		self.coordinates = coordinates
+		self.nodes_upstream = None
+		self.subcats_direct = [] #subcatchment draining into this node, if any
+		self.subcats_upstream = [] #all subcats upstream
+		self.drainage_area_direct = None #only populated when needed
+		self.drainage_area_upstream = None #only populated when needed
+		self.runoff_upstream_cf = None #only populated when needed
+		self.runoff_upstream_mg = None #only populated when needed
 		self.flood_duration = 0
 		self.maxDepth = 0
 		self.maxHGL = 0
@@ -547,11 +613,11 @@ class Link(object):
 	#object representing a swmm Link (conduit) object
 
 	__slots__ = ('id', 'coordinates', 'maxflow', 'maxQpercent', 'upNodeID', 'downNodeID',
-				'maxHGLDownstream', 'maxHGLUpstream', 'geom1', 'length',
+				'maxHGLDownstream', 'maxHGLUpstream', 'geom1', 'length','inletoffset', 'outletoffset',
 				'draw_coordinates', 'lifecycle', 'delta_type', 'is_delta')
 
 
-	def __init__(self, id, coordinates=[], geom1=None):
+	def __init__(self, id, coordinates=[], geom1=None, inletoffset=0, outletoffset=0):
 
 		#assign the header list
 		self.id = id
@@ -560,6 +626,8 @@ class Link(object):
 		self.maxQpercent = 0
 		self.maxHGLDownstream = 0
 		self.maxHGLUpstream = 0
+		self.inletoffset = inletoffset
+		self.outletoffset = outletoffset
 		self.upNodeID = None
 		self.downNodeID = None
 		self.geom1 = geom1 #faster to use zero as default?

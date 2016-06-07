@@ -12,9 +12,49 @@ import svgwrite
 import parcels as p
 #import SWMMIO
 import os
+import pandas as pd
 
 from PIL import Image, ImageDraw
 
+def get_all_unmatched_inp_elements (model1, model2):
+
+	unmatches = {}
+	for headerpair in model1.inp.headerList:
+
+		#grab the section header
+		header = headerpair[0].split("\n")[0]
+		dict1 = model1.inp.createDictionary(header)
+		dict2 = model2.inp.createDictionary(header)
+
+		#returns all elements that are new or removed from model1 to model2
+		added = 	[k for k in dict2 if k not in dict1]
+		removed = 	[k for k in dict1 if k not in dict2]
+		unmatches.update({header:{'added':added, 'removed':removed}})
+
+	return unmatches
+def extents_of_changes(model1, model2, extent_buffer=0.0):
+
+	#Return a bbox sorounding the model elements that have changed
+
+	#list of node IDs that have 'new' coordinates
+	newcoordIDs = get_all_unmatched_inp_elements(model1, model2)['[COORDINATES]']['added']
+	allcoords = model2.inp.createDictionary('[COORDINATES]')
+	newcoords = [v for k,v in allcoords.iteritems() if k in newcoordIDs]
+
+	#build dataframe with these coordinates
+	df = pd.DataFrame(data=newcoords, columns=['x', 'y'], dtype=float )
+
+	#create bbox from mins/maxima
+	df['x']=df.x.astype(int)  #convert to int
+	df['y']=df.y.astype(int)  #convert to int
+	x1, y1, x2, y2 = df.x.min(), df.y.min(), df.x.max(), df.y.max()
+
+	#Add a buffer (1 = no buffer)
+	l = float(x2 - x1)  #length of extents (ft)
+	buff = l*float(extent_buffer)
+
+	bbox = [(x1-buff, y1-buff), (x2+buff, y2+buff)]
+	return bbox
 
 def getUnmatchedElementsInSection (inp1, inp2, section="[CONDUITS]"):
 
@@ -42,7 +82,6 @@ def joinModelData (model1, model2, bbox=None, joinType='conduit', compare_param=
 
 	#joins data from two models in a side by side dictionary
 	#presumably, a baseline and a proposed SFR solution
-
 
 	if joinType == 'conduit':
 
@@ -260,17 +299,17 @@ def drawModelComparison(model1, model2, **kwargs):
 	xplier = ops['xplier']
 	bbox = ops['bbox']
 	imgName = ops['imgName'] # for some reason saveImage() won't take the dict reference
-
+	svg = ops['svg']
 	#joinedConduits = joinModelData(model1, model2, bbox)
 	#joinedNodes = joinModelData(model1, model2, bbox, joinType='node')
-	condtuits_delta = compareConduits(model1, model2, bbox)
+	conduits_delta = compareConduits(model1, model2, bbox)
 	nodes_delta = compareNodes(model1, model2, bbox)
 
 
 	xplier *= width/1024 #scale the symbology sizes
 	width = width*2
 
-	modelSizeDict = su.convertCoordinatesToPixels(condtuits_delta, bbox=bbox, targetImgW=width)
+	modelSizeDict = su.convertCoordinatesToPixels(conduits_delta, bbox=bbox, targetImgW=width)
 	shiftRatio = modelSizeDict['shiftRatio']
 
 	su.convertCoordinatesToPixels(nodes_delta, targetImgW=width, bbox=bbox, shiftRatio=shiftRatio)
@@ -281,7 +320,7 @@ def drawModelComparison(model1, model2, **kwargs):
 
 	imgSize = [int(x) for x in imgSize]
 
-	if not ops['svg']:
+	if not svg:
 		img = Image.new('RGB', imgSize, ops['bg'])
 		draw = ImageDraw.Draw(img)
 	else:
@@ -304,12 +343,13 @@ def drawModelComparison(model1, model2, **kwargs):
 		sg.drawParcels(draw, delta_parcels, options=ops['parcelSymb'], bbox=bbox, width=width, shiftRatio=shiftRatio)
 
 	if ops['basemap']:
-		sg.drawBasemap(draw, img=img, options=ops['basemap'], width=width, bbox=bbox, shiftRatio=shiftRatio, xplier=xplier)
+		sg.drawBasemap(draw, img=img, options=ops['basemap'], width=width, bbox=bbox,
+						shiftRatio=shiftRatio, xplier=xplier)
 
 	drawCount = 0
 	#DRAW THE CONDUITS
 	if ops['conduitSymb']:
-		for id, conduit in condtuits_delta.iteritems():
+		for id, conduit in conduits_delta.iteritems():
 			if conduit.coordinates: #has coordinate? draw. protect from rdii junk
 				su.drawConduit(conduit, draw, ops['conduitSymb'], xplier = xplier)
 				drawCount += 1
@@ -331,8 +371,15 @@ def drawModelComparison(model1, model2, **kwargs):
 	#su.annotateMap (draw, model1, model2, options=ops, results = anno_results)
 	#del draw
 	#SAVE IMAGE TO DISK
-	sg.saveImage(draw, model2, imgName)
+	#sg.saveImage(draw, model2, imgName)
 
+	if svg:
+		del ops
+		#SAVE IMAGE TO DISK
+		sg.saveImage(draw, model2, imgName, fileExt='.svg')
+	else:
+		del draw, ops
+		sg.saveImage(img, model2, imgName, imgDir=imgDir)
 
 
 #end

@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+#coding:utf-8
+
 #Utilities and such for SWMMIO processing
 import math
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -23,6 +26,7 @@ sm6 = 			((2692788, 225853), (2693684, 226477))
 chris = 		((2688798, 221573), (2702834, 230620))
 nolibbox= 		((2685646, 238860),	(2713597, 258218))
 mckean = 		((2691080, 226162),	(2692236, 226938))
+d68d70 = 		((2691647, 221073),	(2702592, 227171))
 d70 = 			((2694096, 222741),	(2697575, 225059))
 ritner_moyamen =((2693433, 223967),	(2694587, 224737))
 morris_10th = 	((2693740, 227260),	(2694412, 227693))
@@ -31,6 +35,8 @@ study_area = 	((2682005, 219180), (2701713, 235555))
 dickenson_7th = ((2695378, 227948), (2695723, 228179))
 packer_18th = 	((2688448, 219932), (2691332, 221857))
 moore_broad = 	((2689315, 225537), (2695020, 228592))
+oregon_front =  ((2695959, 221033), (2701749, 224921))
+mckean_2nd = 	((2696719, 224600), (2699010, 226150))
 
 #COLOR DEFS
 red = 		(250, 5, 5)
@@ -65,7 +71,7 @@ def getFeatureExtent(feature, where="SHEDNAME = 'D68-C1'", geodb=r'C:\Data\ArcGI
 			#print part
 
 #FUNCTIONS
-def traceFromNode(model, startNode, mode='up'):
+def traceFromNode(model, startNode, mode='up', stopnode=None):
 
 	#nodes = model.organizeNodeData(bbox)['nodeDictionaries']
 	#links = model.organizeConduitData(bbox)['conduitDictionaries']
@@ -76,7 +82,7 @@ def traceFromNode(model, startNode, mode='up'):
 	outfallsDict = inp.createDictionary("[OUTFALLS]")
 	allNodesDict = merge_dicts(storagesDict, junctionsDict, outfallsDict)
 
-	tracedNodes = []
+	tracedNodes = [startNode] #include the starting node
 	tracedConduits = []
 
 	#recursive function to trace upstream
@@ -95,6 +101,8 @@ def traceFromNode(model, startNode, mode='up'):
 				#grab its dnstream node ID
 				tracedConduits.append(conduit)
 				tracedNodes.append(conduitDnNodeID)
+				if stopnode and conduitDnNodeID == stopnode:
+					break
 				trace(conduitDnNodeID)
 
 			if mode == 'up' and conduitDnNodeID == nodeID and conduit not in tracedConduits:
@@ -103,6 +111,8 @@ def traceFromNode(model, startNode, mode='up'):
 				#grab its upstream node ID
 				tracedConduits.append(conduit)
 				tracedNodes.append(conduitUpNodeID)
+				if stopnode and conduitUpNodeID == stopnode:
+					break
 				trace(conduitUpNodeID)
 
 	#kickoff the trace
@@ -110,6 +120,15 @@ def traceFromNode(model, startNode, mode='up'):
 	trace(startNode)
 
 	return {'nodes':tracedNodes, 'conduits':tracedConduits}
+
+def length_of_conduits(conduitsubset):
+
+	#return the total length of conduits given a dictionary of Link objects
+	l = 0
+	for id, conduit in conduitsubset.iteritems():
+		l +=conduit.length
+
+	return l
 
 def randAlphaNum(n=6):
 	import random
@@ -233,18 +252,20 @@ def shape2Pixels(feature, cols = ["OBJECTID", "SHAPE@"],  where="SHEDNAME = 'D68
 				#check if part of geometry is within the bbox, skip if not
 				if bbox and len ( [x for x in section if pointIsInBox(bbox, x)] ) == 0:
 					continue #skip this section if none of it is within the bounding box
-				elif bbox:
-					#clip to coords to those within the bbox
-					bfr = 100#buffer from trim edge (ft)
-					#trimmedcoords =  [(int(x), int(y)) for [x,y] in section if x > (bbox[0][0]-bfr) and x < (bbox[1][0]+bfr) and y > (bbox[0][1]-bfr) and y < (bbox[1][1]-bfr)]
-					trimmedcoords = [(round(x*10)/10,round(y*10)/10) for (x,y) in section if (x+bfr > bbox[0][0]) and (x-bfr < bbox[1][0]) and (y+bfr > bbox[0][1]) and (y-bfr<bbox[1][1])]
+
+				# elif bbox:
+				# 	#clip to coords to those within the bbox
+				# 	bfr = 100#buffer from trim edge (ft)
+				# 	#trimmedcoords =  [(int(x), int(y)) for [x,y] in section if x > (bbox[0][0]-bfr) and x < (bbox[1][0]+bfr) and y > (bbox[0][1]-bfr) and y < (bbox[1][1]-bfr)]
+				# 	trimmedcoords = [(round(x*10)/10,round(y*10)/10) for (x,y) in section if (x+bfr > bbox[0][0]) and (x-bfr < bbox[1][0]) and (y+bfr > bbox[0][1]) and (y-bfr<bbox[1][1])]
+
 
 				id = str(row[0])
 				if len(geometrySections) > 1:
 					id = str(row[0]) + "." + str(i)
 
-				geometryDict = {'coordinates':trimmedcoords, 'geomType':geomType}
-				#geometryDicts.update({id:{'coordinates':geomArr}})
+				# geometryDict = {'coordinates':trimmedcoords, 'geomType':geomType}
+				geometryDict = {'coordinates':section, 'geomType':geomType}
 
 				#add any other optional cols, starting at 3rd col item
 				for j, col in enumerate(cols[2:]):
@@ -324,7 +345,6 @@ def convertCoordinatesToPixels(element_objs, targetImgW=1024, bbox=None, shiftRa
 	if not shiftRatio:
 		shiftRatio = float(targetImgW / width) # to scale down from coordinate to pixels
 
-	print "reg shift ratio = ", shiftRatio
 	for id, element in element_objs.iteritems():
 
 		coordPair = element.coordinates
@@ -347,7 +367,7 @@ def convertCoordinatesToPixels(element_objs, targetImgW=1024, bbox=None, shiftRa
 	modelSizeDict = {'imgSize':imgSize, 'boundingBox': bbox, 'shiftRatio':shiftRatio }
 	return modelSizeDict
 
-def coordToDrawCoord(coordinates, bbox, shiftRatio):
+def coordToDrawCoord(coordinates, bbox=None, shiftRatio=None, shiftRatioY=None, width=None, height=None):
 
 	#convert single coordinate pair into the drawing space (pixels rather than cartesian coords)
 	#given a cartesian bbox and shiftRatio
@@ -355,16 +375,20 @@ def coordToDrawCoord(coordinates, bbox, shiftRatio):
 	#transform coords by normalizing by the mins, apply a ratio to
 	#produce the desired width pixel space
 
-	minX = float(bbox[0][0])
-	minY = float(bbox[0][1])
-	maxX = float(bbox[1][0])
-	maxY = float(bbox[1][1])
+	minX = minY = 0
+	if bbox:
+		minX = float(bbox[0][0])
+		minY = float(bbox[0][1])
+		maxX = float(bbox[1][0])
+		maxY = float(bbox[1][1])
 
-	height = maxY - minY
-	width = maxX - minX
+		height = maxY - minY
+		width = maxX - minX
 
+	if not shiftRatioY:
+		shiftRatioY = shiftRatio
 	x =  (coordinates[0] - minX) * shiftRatio
-	y =  (height - coordinates[1] + minY) * shiftRatio #subtract from height because PIL origin is in top right
+	y =  (height - coordinates[1] + minY) * shiftRatioY #subtract from height because PIL origin is in top right
 
 	return (x,y)
 
@@ -444,7 +468,7 @@ def drawNode(node, draw, options, rpt=None, dTime=None, xplier=1, svg=True):
 		#circle.fill(opacity=0.5).stroke('black', width=1).dasharray([20, 20])
 		draw.add(circle)
 
-def drawConduit(conduit, draw, options, rpt=None, dTime = None, xplier = 1, highlighted=None):
+def drawConduit(conduit, draw, options, rpt=None, dTime = None, xplier = 1, highlighted=None, svg=True):
 
 	#Method for drawing (in plan view) a single conduit, given its RPT results
 
@@ -508,15 +532,15 @@ def drawConduit(conduit, draw, options, rpt=None, dTime = None, xplier = 1, high
 		qChange = 	conduit.maxflow #elementChange(conduitData, parameter='maxflow')
 		maxQperc = 	conduit.maxQpercent #elementChange(conduitData, parameter='maxQpercent')
 
-
-		#FIRST DRAW NEW OR CHANGED CONDUITS IN A CLEAR WAY
-		if conduit.lifecycle == 'new':
-			fill = blue
-			drawSize = min(10, conduit.geom1)
-
-		if conduit.lifecycle == 'changed':
-			fill = blue
-			drawSize = min(10, conduit.geom1)
+		#default draw behavoir = draw grey lines proportional to geom1
+		drawSize = min(7, conduit.geom1*0.7)
+		fill = du.mediumgrey
+		# #FIRST DRAW NEW OR CHANGED CONDUITS IN A CLEAR WAY
+		# if conduit.lifecycle == 'new':
+		# 	fill = blue
+		# if conduit.lifecycle == 'changed':
+		# 	fill = green #blue
+			#drawSize = min(10, conduit.geom1)
 
 		#IF THE CONDUITS IS 'EXISTING', DISPLAY SYMBOLOGY ACCORDINGLY (how things changed, etc)
 		if conduit.lifecycle == 'existing':
@@ -524,53 +548,64 @@ def drawConduit(conduit, draw, options, rpt=None, dTime = None, xplier = 1, high
 			if type == 'proposed_simple':
 				#drawSize = 0 #don't draw, only print the proposed infrastructure
 				#fill = red
-				should_draw = False
+				#should_draw = False
+				pass
 			if type == 'compare_flow':
 
+				drawSize = options['draw_size'](abs(qChange*options['xplier']), options['exp'])
 				if qChange > 0:
-					fill = du.greyRedGradient(qChange, 0, 20)
-					drawSize = int(round(math.pow(qChange, 0.67)))
+					fill = du.greyRedGradient(qChange+15, 0, 20)
+					#drawSize = int(round(math.pow(qChange, 0.67)))
 
 				if qChange <= 0:
-					fill = du.greyGreenGradient(abs(qChange), 0, 20)
-					drawSize = int(round(math.pow(abs(qChange), 0.67)))
+					fill = du.greyGreenGradient(abs(qChange)+15, 0, 20)
+					#drawSize = int(round(math.pow(abs(qChange), 0.67)))
+
 
 			if type == 'compare_hgl':
 
 				avgHGL = (conduit.maxHGLUpstream + conduit.maxHGLDownstream) / 2.0
-
+				drawSize = options['draw_size'](abs(avgHGL*options['xplier']), options['exp'])
 				if avgHGL > 0:
-					fill = du.greyRedGradient(avgHGL+15, 0, 20)
-					drawSize = int(round(math.pow(avgHGL, 1)))
+					fill = du.red #du.greyRedGradient(avgHGL+15, 0, 20)
+					#drawSize = int(round(math.pow(avgHGL, 1)))
 
 				if avgHGL <= 0:
-					fill = du.greyGreenGradient(abs(avgHGL)+15, 0, 20)
-					drawSize = int(round(math.pow(avgHGL, 1)))
+					fill = du.green_bright #du.greyGreenGradient(abs(avgHGL)+15, 0, 20)
+					#drawSize = int(round(math.pow(avgHGL, 1)))
 
 
 	#if highlighted list is provided, overide any symbology for the highlighted conduits
-	if highlighted and id in highlighted:
+	if highlighted and conduit.id in highlighted:
 		fill = blue
 		drawSize = 3
-
+	#FIRST DRAW NEW OR CHANGED CONDUITS IN A CLEAR WAY
+	if conduit.lifecycle == 'new':
+		fill = blue
+	if conduit.lifecycle == 'changed':
+		fill = green #blue
 	drawSize = int(drawSize*xplier)
 
 
 	if should_draw:
 		#draw that thing
+		if not svg:
+			#draw.line(coordPair, fill = fill, width = drawSize)
 
-		#draw.line(coordPair, fill = fill, width = drawSize)
-		fill = 'rgb'+str(fill)
-		line = draw.line(coordPair[0], coordPair[1], stroke = fill, stroke_width = drawSize)
-		if pipeLengthPlanView(coordPair[0], coordPair[1]) > drawSize*0.75:
-			#if length is long enough, add circles on the ends to smooth em out
-			#this check avoids circles being drawn for tiny pipe segs
-			stroke_linecap="round"
-
-		#	draw.ellipse(du.circleBBox(coordPair[0], drawSize*0.5), fill =fill)
-		#	draw.ellipse(du.circleBBox(coordPair[1], drawSize*0.5), fill =fill)
-		line = draw.line(coordPair[0], coordPair[1], stroke = fill, stroke_width = drawSize, stroke_linecap=stroke_linecap)
-		draw.add(line)
+			line = draw.line(coordPair[0], coordPair[1], stroke = fill, stroke_width = drawSize)
+			if pipeLengthPlanView(coordPair[0], coordPair[1]) > drawSize*0.75:
+				#if length is long enough, add circles on the ends to smooth em out
+				#this check avoids circles being drawn for tiny pipe segs
+				draw.ellipse(du.circleBBox(coordPair[0], drawSize*0.5), fill =fill)
+				draw.ellipse(du.circleBBox(coordPair[1], drawSize*0.5), fill =fill)
+		else:
+			fill = 'rgb'+str(fill)
+			if pipeLengthPlanView(coordPair[0], coordPair[1]) > drawSize*0.75:
+				stroke_linecap="round"
+			line = draw.line(coordPair[0], coordPair[1], stroke = fill,
+					stroke_width = drawSize, stroke_linecap=stroke_linecap,
+					)
+			draw.add(line)
 
 def angleBetweenPoint(xy1, xy2):
 	dx, dy = (xy2[0] - xy1[0]), (xy2[1] - xy1[1])
@@ -642,9 +677,9 @@ def annotateMap (draw, model, model2=None, currentTstr = None, options=None, res
 	#this is hideous, or elegant?
 	files = title = results_string = symbology_string = annotationTxt = ""
 	files = '\n'.join([m.rpt.filePath for m in filter(None, [model, model2])])
-	title = ', '.join([m.inp.name for m in filter(None, [model, model2])])
+	title = ' to '.join([m.inp.name for m in filter(None, [model, model2])])
 	symbology_string = ', '.join([s['title'] for s in filter(None, [nodeSymb, conduitSymb, parcelSymb])])
-	title += ": " + symbology_string
+	title += "\n" + symbology_string
 
 	#params_string = ''.join([" > " + str(round(s['threshold']*600)/10) + "min " for s in filter(None, [parcelSymb])])
 	#build the title
@@ -660,17 +695,23 @@ def annotateMap (draw, model, model2=None, currentTstr = None, options=None, res
 	annotationTxt += files
 
 
-	annoHeight = canvas.textsize(annotationTxt, font)[1]
+	annoHeight = draw.textsize(annotationTxt, font)[1]
 
-	canvas.text((10, 15), title, fill=black, font=titleFont)
-	canvas.text((10, modelSize[1] - annoHeight - 10), annotationTxt, fill=black, font=font)
+	draw.text((10, 15), title, fill=black, font=titleFont)
+	draw.text((10, modelSize[1] - annoHeight - 10), annotationTxt, fill=black, font=font)
 
 
 	if currentTstr:
 		#timestamp in lower right corner
-		annoHeight = canvas.textsize(currentTstr, font)[1]
-		annoWidth = canvas.textsize(currentTstr, font)[0]
-		canvas.text((modelSize[0] - annoWidth - 10, modelSize[1] - annoHeight - 10), currentTstr, fill=black, font=font)
+		annoHeight = draw.textsize(currentTstr, font)[1]
+		annoWidth = draw.textsize(currentTstr, font)[0]
+		draw.text((modelSize[0] - annoWidth - 10, modelSize[1] - annoHeight - 10), currentTstr, fill=black, font=font)
+
+	#add postprocessing timestamp
+	timestamp = strftime("%b-%d-%Y %H:%M:%S")
+	annoHeight = draw.textsize(timestamp, font)[1]
+	annoWidth = draw.textsize(timestamp, font)[0]
+	draw.text((modelSize[0] - annoWidth - 10, annoHeight - 5), timestamp, fill=du.grey, font=font)
 
 
 

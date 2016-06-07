@@ -9,10 +9,12 @@ lightblue = (184, 217, 242)
 shed_blue = (0,169,230)
 white =		(250,250,240)
 black = 	(0,3,18)
+mediumgrey = (190, 190, 180)
 lightgrey = (235, 235, 225)
 grey = 		(100,95,97)
 park_green = (115, 178, 115)
 green = 	(115, 220, 115)
+green_bright= (23, 191, 23)
 lightgreen = (150,212,166)
 water_grey = (130, 130, 130)
 purple = (250, 0, 250)
@@ -99,13 +101,19 @@ def conduit_options(type, **kwargs):
 			'title': 'Flow Comparison',
 			'description': 'Shows the change in peak flows in conduits between a baseline and proposed model',
 			'type': 'compare_flow',
-			'fill':greyRedGradient
+			'fill':greyRedGradient,
+			'draw_size':line_size,
+			'exp':0.67,
+			'xplier':1
 		},
 		'compare_hgl': {
 			'title': 'HGL Comparison',
 			'description': 'Shows the change in HGL in conduits between a baseline and proposed model',
 			'type': 'compare_hgl',
-			'fill':greyRedGradient
+			'fill':greyRedGradient,
+			'draw_size':line_size,
+			'exp':1,
+			'xplier':10
 		},
 		'proposed_simple': {
 			'title': 'Proposed Infrastructure',
@@ -119,15 +127,17 @@ def conduit_options(type, **kwargs):
 			'type': 'capacity_remaining',
 			'fill':blue,
 			'draw_size':line_size,
-			'exp':0.75
+			'exp':0.75,
+			'xplier':1
 		},
 		'flow': {
 			'title': 'Condiut Flow',
-			'description': 'Shows the flow in conduits with line weight',
+			'description': 'Shows the flow in conduits with proportional ine weight',
 			'type': 'flow',
 			'fill':blue,
 			'draw_size':line_size,
-			'exp':0.67
+			'exp':0.67,
+			'xplier':1
 		},
 		'flow_stress': {
 			'title': 'Condiut Flow & Stress',
@@ -135,7 +145,8 @@ def conduit_options(type, **kwargs):
 			'type': 'flow_stress',
 			'fill':greenRedGradient,
 			'draw_size':line_size,
-			'exp':0.67
+			'exp':0.67,
+			'xplier':1
 		},
 		'trace': {
 			'title': 'Trace Upstream',
@@ -214,6 +225,7 @@ def default_draw_options():
 		'bbox':None,
 		'imgName':None,
 		'svg':True,
+		'imgDir':None,
 		'nodeSymb': node_options('flood'),
 		'conduitSymb': conduit_options('stress'),
 		'parcelSymb': parcel_options('flood'),
@@ -337,11 +349,15 @@ def annotateLine (draw, dataDict, fontScale=1, annoKey='name', labeled = None, s
 		drawCoord = dataDict['draw_coordinates']
 		angle = angleBetweenPoint(coords[0], coords[1])
 		midpoint = midPoint(drawCoord[0], drawCoord[1])
-		#angletxt = rotate()
-		text = draw.text(txt, (midpoint[0], midpoint[1]), text_anchor='middle', fill='rgb(185, 180, 180)' opacity=0.5,  font_size=14)
-		draw.add(text)
-		#texRot = imgTxt.rotate(angle, expand=1)
-		#canvas.paste( ImageOps.colorize(texRot, (0,0,0), (255,255,84)), (242,60),  texRot)
+
+		if svg:
+			t = 'rotate({} {} {})'.format(angle, midpoint[0], midpoint[1])
+			text = draw.text(txt, (midpoint[0], midpoint[1]), text_anchor='middle',
+							fill='rgb(185, 180, 180)', opacity=0.75, font_size=14, transform=t)
+			draw.add(text)
+		else:
+			texRot = imgTxt.rotate(angle, expand=1)
+			canvas.paste( ImageOps.colorize(texRot, (0,0,0), (255,255,84)), (242,60),  texRot)
 
 
 		#img.paste(texRot , midpoint,  texRot)
@@ -360,10 +376,10 @@ def angleBetweenPoint(xy1, xy2):
 
 	if dy !=0:
 		angle = (math.atan(float(dx)/float(dy)) * 180/math.pi )
-		if angle < 0:
-			angle = 270 - angle
+		if angle > 0:
+			angle = 270 + angle
 		else:
-			angle = 90 - angle
+			angle = 90 + angle
 	else:
 		angle=0
 	#angle in radians
